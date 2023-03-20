@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# Made by:
+# Sergio Mendoza <sergio@mendozza.org>
+# Instituto de Astronomia UNAM
+# Ciudad Universitaria
+# Ciudad de Mexico
+# Mexico
+# Thu Oct  1 22:09:56 UTC 2015
+
+date > time-running.txt
+
+nohup nice -n 19 ./re-emited
+
+date >> time-running.txt

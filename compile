@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# Made by:
+# Sergio Mendoza <sergio@mendozza.org>
+# Instituto de Astronomia UNAM
+# Ciudad Universitaria
+# Ciudad de Mexico
+# Mexico
+# Thu Oct  1 22:09:50 UTC 2015
+
+#gcc kerr.c -o kerr -lm -lgsl -Ofast -fopenmp
+#gcc re-emited.c -o re-emited -lm -lgsl -Ofast -fopenmp
+#nvcc re-emited.cu -o re-emited -lm -lgsl #-Ofast
+#nvcc Xptxas -O3,-v re-emited.cu -o re-emited -use_fast_math 
+#nvcc -Xcompiler -fopenmp re-emited.cu -o re-emited -use_fast_math 
+nvcc -std=c++11 -arch=sm_52 --fmad=true  -Xcompiler -fopenmp re-emited.cu -o re-emited -use_fast_math 
+

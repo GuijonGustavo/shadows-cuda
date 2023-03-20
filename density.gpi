@@ -1,0 +1,31 @@
+set view map
+set dgrid3d
+
+# The following interpolates with 20x more points on both axis:
+set pm3d interpolate 0,0
+
+# set cntrparam bspline points 10 levels auto 10
+
+set dgrid3d 100,100 # gauss 0.1
+
+# set contour base
+
+
+# set palette defined (0 0 0 0.5, 1 0 0 1, 2 0 0.5 1, 3 0 1 1, 4 0.5 1 0.5, 5 1 1 0, 6 1 0.5 0, 7 1 0 0, 8 0.5 0 0)
+
+set size square
+
+#set logscale z
+
+do for [i=0:359]{
+  set output 'receptor'.i.'.png'
+#  set output 'heatmap2.png'
+#  set output 'emisor.png'
+#  set output 'receptor.png'
+  set term png
+  splot 'second_display_image'.i.'.dat' with pm3d
+#  splot 'disc5to15_ra_0_image1.dat' with pm3d
+#  splot 'second_display_image1.dat' with pm3d
+#  splot 'emited_image.dat' with pm3d
+  set term wxt
+}
