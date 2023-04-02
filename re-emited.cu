@@ -10,35 +10,6 @@
 # Fri 21 Oct 2020 05:40:36 PM UTC
 */
 
-///////////////////////////////////////////////////////////////////////////
-///////////// information Device //////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////
-//  Device name: NVIDIA RTX A6000
-//  Capability: 8.6
-//  Clock Rate: 1800 MHz
-//  Number of SMs: 84
-//  Max Threads per Block: 1024
-//  Max Threads per SM: 1536
-//  Max Threads dim: 1024x1024x64
-//  Max Grid size: 2147483647x65535x65535
-//  Shared Memory per Block: 48 kB
-//  Shared Memory per SM: 100 kB
-//  Total Global Memory: 47 GB
-//  Total Constant Memory: 64 kB
-//  Memory Clock Rate: 8001 MHz
-//  Memory Bus Width: 384 bit
-//  Peak Memory Bandwidth: 768.096000 Gbit/s
-//  Fatbin elf code:
-//  ================
-//  arch = sm_52
-//  code version = [1,7]
-//  host = linux
-//  compile_size = 64bit
-//
-//  code for sm_52
-//
-/////////////////////////////////////////////////////////////////////////////////
-
 //includes
 #include "content/Headers.h"
 
@@ -60,7 +31,6 @@ FILE *datafilewrite;
 /*datafile to be open for read*/
 FILE *datafileread;
 
-
 //////////////////////////////////////////////////////////////////////////////
 ////////////////////////  K E R N E L  ///////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
@@ -80,7 +50,7 @@ void remited(int k,
     double Px, Py, Pz, Tau_x, Tau_y, Tau_z;
     double r_evol, theta_evol, phi_evol, r_pre, theta_pre, phi_pre, e_r, e_theta, e_phi, e_r_pre, e_theta_pre, e_phi_pre, dl;
     double distancia, r_orbita, dt, theta_0;
-    int sentinel, count;
+    int sentinel, fila;
   
     double epsilon = 0.1;
   
@@ -147,31 +117,34 @@ void remited(int k,
         y_grid = Py - r_orbita*sinf((0.5*M_PI)+k*dt);
         z_grid = Pz;
   
-        if( 0.5*distancia - epsilon <= x_grid && x_grid <= 0.5*distancia + epsilon \
-  		       && d_min <= y_grid && y_grid <= d_max  \
+
+	if( 0.5*distancia - epsilon <= x_grid && x_grid <= 0.5*distancia + epsilon
+  		       && d_min <= y_grid && y_grid <= d_max
   		       && l_min <= z_grid && z_grid <= l_max && sentinel==0 ){
              sentinel = 1;
              diff_y = 1.0*LADO;
              diff_z = 1.0*LADO;
-             count = 0;
-     
+
+             fila = 0;
              #pragma unroll
 	     for(int m = 0 ; m < ROWS ; m++){
-          	  if(fabs(dev_vector_receptor[m*COLUMNS + 0] - y_grid) <= diff_y && 
-		     fabs(dev_vector_receptor[m*COLUMNS + 1] - z_grid) <= diff_z ){
-              	          diff_y = fabs(dev_vector_receptor[m*COLUMNS + 0] - y_grid);
-  		          diff_z = fabs(dev_vector_receptor[m*COLUMNS + 1] - z_grid);
-        	          count = m;
-            	  }
-             }
-  	     dev_vector_receptor[count*COLUMNS + 2] = dev_vector_receptor[count*COLUMNS + 2] + dev_vector_emisor[(idx)*COLUMNS + 2];
-        }
-  
-	if(!( r_evol<=(1.1*distancia) && r_evol>1.1 && sentinel==0)) break;
-    }//END While 
+          	  if(fabsf(dev_vector_receptor[m*COLUMNS + 0] - y_grid) <= diff_y && 
+		     fabsf(dev_vector_receptor[m*COLUMNS + 1] - z_grid) <= diff_z ){
+              	          diff_y = fabsf(dev_vector_receptor[m*COLUMNS + 0] - y_grid);
+  		          diff_z = fabsf(dev_vector_receptor[m*COLUMNS + 1] - z_grid);
+        	          fila = m;
+            	  }//END IF
+             }//END FOR
+
+	atomicAdd(&dev_vector_receptor[fila*COLUMNS + 2], dev_vector_emisor[idx*COLUMNS + 2]);
+
+__syncthreads();
+	}//END IF
+
+    if(!( r_evol<=(1.1*distancia) && r_evol>1.1 && sentinel==0)) break;
+    }//END FOR 
     sentinel = 0;   
 }
-
 
 //////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////  D E V I C E  //////////////////////////////////////////////
@@ -184,14 +157,13 @@ void onDevice(  double* hst_vector_emisor,
 		double d_max, 
 		double l_max  )
 {
-
  // configuration Grids and Theads
  // dim3 GridBlocks(50,100);
  // dim3 ThreadsBlocks(8,4);
 
 
     //INIT KERNEL LOOP
-    int steps = 360;
+    int steps = 180;
 
     //NAME OF FILE
     char nombre[20];
@@ -201,7 +173,7 @@ void onDevice(  double* hst_vector_emisor,
     timer.Start();
 
     #pragma unroll steps
-    for(int k=0; k<steps; k++){
+    for(int k=0; k<360; k++){
 
         double *dev_vector_emisor, *dev_vector_receptor;
 
@@ -214,6 +186,10 @@ void onDevice(  double* hst_vector_emisor,
         // copy the data to the device
         HANDLER_ERROR_ERR(cudaMemcpy(dev_vector_emisor, hst_vector_emisor, MATRIX * sizeof(double), 
 				cudaMemcpyHostToDevice));
+
+	for(int i = 0; i < ROWS; i++){
+	   hst_vector_receptor[i*3 + 2] = 0.0;
+	  }
 
         // copy the data to the device
         HANDLER_ERROR_ERR(cudaMemcpy(dev_vector_receptor, hst_vector_receptor, MATRIX * sizeof(double), 
@@ -228,7 +204,6 @@ void onDevice(  double* hst_vector_emisor,
         remited<<<BLOCKS,THREADS>>>(k, steps, dev_vector_emisor, dev_vector_receptor, d_min, l_min, d_max, l_max);
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         HANDLER_ERROR_MSG("Kernel Panic!!!");
-
         
         // data from the  host to device
         HANDLER_ERROR_ERR(cudaMemcpy(hst_vector_receptor, dev_vector_receptor, MATRIX  * sizeof(double), 
@@ -237,8 +212,8 @@ void onDevice(  double* hst_vector_emisor,
 	#pragma unroll ROWS
         for (int i = 0; i<ROWS; i++){
             if(hst_vector_receptor[(i)*COLUMNS + 0] != 0 && hst_vector_receptor[(i)*COLUMNS + 1] != 0){
-          		fprintf(datafilewrite, "%.15lf \t %.15lf \t %.15lf \n", hst_vector_receptor[(i)*COLUMNS + 0], \
-           						               hst_vector_receptor[(i)*COLUMNS + 1], \
+          		fprintf(datafilewrite, "%lE \t %lE \t %lE \n", hst_vector_receptor[(i)*COLUMNS + 0]* 5.029643510174233, \
+           						               hst_vector_receptor[(i)*COLUMNS + 1]* 5.029643510174233, \
            							       hst_vector_receptor[(i)*COLUMNS + 2]);
             }
         }
@@ -253,7 +228,7 @@ void onDevice(  double* hst_vector_emisor,
     timer.Stop();
 
     // print time
-    printf("Time :  %f ms\n", timer.Elapsed());
+//    printf("Time :  %f ms\n", timer.Elapsed());
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -283,13 +258,13 @@ void onHost()
   
     #pragma unroll ROWS
     for(int i = 0; i < ROWS; i++){
-        fscanf(datafileread,"%lf\t%lf\t%lf\n", &y, &z, &intensity);
+        fscanf(datafileread,"%lE\t%lE\t%lE\n", &y, &z, &intensity);
         hst_vector_emisor[(i)*COLUMNS + 0] = y / 5.029643510174233;
         hst_vector_emisor[(i)*COLUMNS + 1] = z / 5.029643510174233;
         hst_vector_emisor[(i)*COLUMNS + 2] = intensity;
         hst_vector_receptor[(i)*COLUMNS + 0] = hst_vector_emisor[(i)*COLUMNS + 0];
         hst_vector_receptor[(i)*COLUMNS + 1] = hst_vector_emisor[(i)*COLUMNS + 1];
-   
+
         if(d_max < hst_vector_emisor[(i)*COLUMNS + 0]) d_max = hst_vector_emisor[(i)*COLUMNS + 0];
         if(d_min > hst_vector_emisor[(i)*COLUMNS + 0]) d_min = hst_vector_emisor[(i)*COLUMNS + 0];
         if(l_max < hst_vector_emisor[(i)*COLUMNS + 1]) l_max = hst_vector_emisor[(i)*COLUMNS + 1];
@@ -297,7 +272,7 @@ void onHost()
     }
 
     fclose(datafileread);
-  
+
     // start timer
     CpuTimer timer;
     timer.Start();
@@ -315,7 +290,7 @@ void onHost()
     //salida del programa
     free(hst_vector_receptor);
     free(hst_vector_emisor);
-    printf("-: successful execution :-\n");
+//    printf("-: successful execution :-\n");
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -327,3 +302,4 @@ int main()
     onHost();
     return 0;
 }
+
